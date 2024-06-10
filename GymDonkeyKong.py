@@ -20,10 +20,17 @@ class Mario:
       self.genes = []
       self.finalLocation = (0, 0)
       self.reward = False
+      self.probability = 0
    def generateGenes(self, tabLen):
       seed()
       for i in range(tabLen):
          self.genes.append(randint(2, 4))
+   def mutate(self, tabLen):
+      for i in range(tabLen):
+         prob = random.random()
+         if prob < 0.05:
+            self.genes[i] = randint(2, 4)
+
    def saveToFile(self, generation):
       file = open("WinnerMarioGen20.txt", "a")
       file.write(f"Mario generacja {generation}: ")
@@ -32,10 +39,10 @@ class Mario:
       file.write("\n")
       file.close()
    def readFromFile(self, marioGen):
-      with open("WinnerMario.txt") as file:
+      with open("WinnerMarioGen20.txt") as file:
          for line in file:
             tab = line.split(" ")
-            if(tab[0] == "Mario" and tab[2][:2] == str(marioGen)):
+            if(tab[0] == "Mario" and tab[2][:len(tab[2])-1] == str(marioGen)):
                self.genes = tab[3:]
 
 
@@ -44,12 +51,10 @@ def mate(marioMom, marioDad, tabLen):
    for i in range(tabLen):
       prob = random.random()
 
-      if prob < 0.45: #geny od matki
+      if prob < 0.5: #geny od matki
          marioChild.genes.append(marioMom.genes[i])
-      elif prob < 0.90: #geny od ojca
+      else: #geny od ojca
          marioChild.genes.append(marioDad.genes[i])
-      else: #geny ulegajace mutacji
-         marioChild.genes.append(randint(2, 4))
    return marioChild
 
 def findRed(n):
@@ -58,6 +63,24 @@ def findRed(n):
          if col[0] == 200 and col[1] == 72 and col[2] == 72:
             if i != 26 and j != 66:
                return (i, j)
+            
+def calculateProbability(sortedMarios, sumDistance):
+   #obliczamy prawdopodobienstwo z jakim dany Mario zostanie wybrany ze wzoru fitness / overall fitness
+   for mario in sortedMarios:
+      mario.probability = abs(mario.distance) / sumDistance
+   #wybieramy prawdopodobienstwo najslabszego Mario
+   weakestMarioProbability = sortedMarios[-1].probability
+   index = -1
+   while(weakestMarioProbability == 0):
+      weakestMarioProbability = sortedMarios[index - 1].probability
+      index -= 1
+   rouletteSelectionList = []
+   #wpisujemy do listy Mario tyle razy ile razy jego prawdopodobienstwo jest wieksze od prawdopodobienstwa najslabszego Mario 
+   for mario in sortedMarios:
+      numberOfRepetitions = int(mario.probability // weakestMarioProbability)
+      for i in range(numberOfRepetitions):
+         rouletteSelectionList.append(mario)
+   return rouletteSelectionList
 
 def testMario(env, mario):
    hatLength = 3
@@ -117,11 +140,13 @@ def train():
    generation = 1
    found = False
    population = []
+   sumDistance = 0
    
    for _ in range(populationSize):
       mario = Mario()
       mario.generateGenes(tabLen)
       testMario(env, mario)
+      sumDistance += abs(mario.distance)
       population.append(mario)
 
    while not found:
@@ -134,6 +159,7 @@ def train():
 
       print(f"Generacja = {generation}, dystans Mario = {population[0].distance}")
       newGeneration = []
+      """
       #10% najbardziej sprawnych z poprzedniej generacji przechodzi do nowej generacji
       s = int((10*populationSize)/100)
       newGeneration.extend(population[:s])
@@ -145,6 +171,23 @@ def train():
          marioChild = mate(marioMom, marioDad, tabLen)
          testMario(env, marioChild)
          newGeneration.append(marioChild)
+      """
+      marioRouletteSelection = calculateProbability(population, sumDistance)
+      sumDistance = 0
+      #Selekcja i krzyzowanie
+      for _ in range(populationSize):
+         prob = random.random()
+         newMario = Mario()
+         if prob < 0.3:
+            newMario = random.choice(marioRouletteSelection)
+         else:
+            marioMom = random.choice(marioRouletteSelection)
+            marioDad = random.choice(marioRouletteSelection)
+            newMario = mate(marioMom, marioDad, tabLen)
+            newMario.mutate(tabLen)
+            testMario(env, newMario)
+         newGeneration.append(newMario)
+         sumDistance += abs(newMario.distance)
 
       population = newGeneration
       generation += 1
@@ -183,17 +226,7 @@ def runSavedMario(generationNumber):
          env.close()
          break
 
-
-"""
-marios.sort(key=lambda mario: mario.distance, reverse=True)
-print("Najlepszy Mario:")
-print(f"Dystans: {marios[0].distance}")
-print(f"Finalna lokacja: {marios[0].finalLocation}")
-print("Droga: ")
-print(marios[0].path)
-"""
-
 if __name__ == '__main__':
    #env = gym.make("ALE/DonkeyKong-v5", render_mode="human")
-   #train()
-   runSavedMario(15)
+   train()
+   #runSavedMario(12)
